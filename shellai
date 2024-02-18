@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+
+# @TODO : load model depends of the request (--shell other)
+
+import os
+import sys
+import json
+import httpx
+import argparse
+from pydantic import BaseModel, Field
+from typing import Union, Literal, List
+
+# Determine user's home directory
+home_dir = os.path.expanduser("~")
+
+# Path to the config directory
+config_dir = os.path.join(home_dir, ".config")
+
+# Path to the config directory
+config_dir = os.path.join(config_dir, "shellai")
+
+# Ensure the config directory exists
+os.makedirs(config_dir, exist_ok=True)
+
+# Path to the config file
+config_file_path = os.path.join(config_dir, "config.json")
+
+# Default configuration
+default_config = {
+    "OLLAMA_BASE_URL": "http://localhost:11434",
+    "OLLAMA_MODEL": "openhermes2.5-mistral",
+    "TIMEOUT_SECONDS": 60,
+    "BUFFER_SIZE": 500
+}
+
+# Load configuration from config.json or use default config if the file doesn't exist
+if os.path.exists(config_file_path):
+    with open(config_file_path, 'r') as config_file:
+        config = json.load(config_file)
+else:
+    config = default_config
+
+# constant
+#OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = config.get("OLLAMA_BASE_URL", default_config["OLLAMA_BASE_URL"])
+OLLAMA_MODEL = config.get("OLLAMA_MODEL", default_config["OLLAMA_MODEL"])
+TIMEOUT_SECONDS = config.get("TIMEOUT_SECONDS", default_config["TIMEOUT_SECONDS"])
+BUFFER_SIZE = config.get("BUFFER_SIZE", default_config["BUFFER_SIZE"])
+
+SHELL_ROLE = """Provide only {current_shell} commands for {current_os} without any description.
+If there is a lack of details, provide most logical solution.
+Ensure the output is a valid shell command.
+If multiple steps required try to combine them together using &&.
+Provide only plain text without Markdown formatting.
+Do not provide markdown formatting such as ```.
+"""
+
+CODE_ROLE = """Provide only code as output without any description.
+Provide only code in plain text format without Markdown formatting.
+Do not include symbols such as ``` or ```python.
+If there is a lack of details, provide most logical solution.
+You are not allowed to ask for more details.
+For example if the prompt is "Hello world Python", you should return "print('Hello world')"."""
+
+DESCRIBE_SHELL_ROLE = """Provide a terse, single sentence description of the given shell command.
+Describe each argument and option of the command.
+Provide short responses in about 80 words.
+APPLY MARKDOWN formatting when possible."""
+# Note that output for all roles containing "APPLY MARKDOWN" will be formatted as Markdown.
+
+DEFAULT_ROLE = """You are programming and system administration assistant.
+You are managing {current_os} operating system with {current_shell} shell.
+Provide short responses in about 100 words, unless you are specifically asked for more details.
+If you need to store any data, assume it will be stored in the conversation.
+APPLY MARKDOWN formatting when possible."""
+# Note that output for all roles containing "APPLY MARKDOWN" will be formatted as Markdown.
+
+# Define a Pydantic BaseModel for Message
+class Message(BaseModel):
+    # Define the fields for a message
+    role: Union[Literal["system"], Literal["user"], Literal["assistant"]] # Role of the message sender
+    content: str  # Content of the message
+
+# Define a Pydantic BaseModel for ChatRequest
+class ChatRequest(BaseModel):
+    # Define fields with default values removed and aliases for serialization/deserialization
+    model: str = Field(..., alias="model")  # The type of chat model to use
+    messages: List[Message] = Field(default_factory=list)  # List of messages with default factory set to empty list
+    stream: bool = Field(default=False, alias="stream")  # Boolean flag indicating if streaming is enabled
+
+# Define a Pydantic BaseModel for MessageBuffer
+class MessageBuffer(BaseModel):
+    # Define fields with default values removed and aliases for serialization/deserialization
+    system_message: Message = Field(..., alias="system_message") # The system message
+    messages: List[Message] = Field(default_factory=list) # List of messages with default factory set to empty list
+    buffer_size: int = Field(..., alias="buffer_size") # Size of the message buffer
+
+    # Method to add a message to the buffer
+    def add_message(self, message: Message):
+        self.messages.append(message)
+
+    # Method to get the buffered history of messages
+    def get_buffered_history(self) -> List[Message]:
+        # Initialize a list with the system message as the first element
+        messages = [self.system_message]
+        # Extend the list with the most recent messages from the buffer up to the buffer size
+        messages.extend(self.messages[-self.buffer_size :])
+        # Return the buffered history of messages
+        return messages
+
+# generation function
+def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
+    # Remove trailing slash from API base URL if present
+    ollama_api_base.rstrip() if ollama_api_base[-1] == "/" else ...
+
+    # Construct the URL for the chat API endpoint
+    request_url = ollama_api_base + "/api/chat"
+
+    # Get the data to be sent in the request by serializing the ChatRequest object
+    request_data = request.model_dump()
+
+    # Make an HTTP POST request to the chat API endpoint, sending JSON data
+    try:
+        response = httpx.post(request_url, json=request_data, timeout=TIMEOUT_SECONDS)
+        # Extract the raw message from the response JSON
+        raw_message = response.json()["message"]
+        # Create a Message object from the raw message data
+        message = Message(**raw_message)
+    except httpx.ReadTimeout as e:
+        # Display a part of the response if request timeout occurs
+        print("HTTP request timed out. Unable to complete the chat at the moment. Try to be more precise or use another model")
+        # Here you can decide whether to return a default message or raise the exception
+        return Message(role="assistant", content="I'm sorry, I couldn't complete the chat due to a timeout.")
+    except httpx.RequestError as exc:
+        print(f"An error occurred: {exc}")
+        # Here you can decide whether to return a default message or raise the exception
+        return Message(role="assistant", content="An error occurred during the chat httpx request error.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        # Here you can decide whether to return a default message or raise the exception
+        return Message(role="assistant", content="An error occurred during the chat.")
+
+    # Return the message
+    return message
+
+def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Process user input and command-line arguments.')
+    parser.add_argument('--shell', action='store_true', help='Include shell information in the message context')
+    parser.add_argument('-c', dest='use_code_role', action='store_true', help='Use CODE_ROLE format')
+    parser.add_argument('strings', nargs='*', help='Additional strings to process')
+    args = parser.parse_args()
+
+    if len(sys.argv) <= 1:
+        parser.error("You must provide at least one argument")
+        sys.exit(1)
+
+    # Get current shell
+    current_shell = os.environ.get('SHELL')
+
+    # Get current operating system
+    current_os = sys.platform
+
+    # Check if there is input available from stdin Read input from stdin and remove leading/trailing whitespace
+    input_text = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
+
+    # Check if there are additional strings provided
+    optional_arg = ' '.join(args.strings)
+
+    # Combine user input with command line argument
+    user_message = input_text + " " + optional_arg
+
+    if input_text and optional_arg:
+        # If both input_text and optional_arg are provided
+        # Use DESCRIBE_SHELL_ROLE format string to describe the shell role
+        system_message_context = DESCRIBE_SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
+    elif args.use_code_role:
+        # If only optional_arg is provided
+        # Use CODE_ROLE format string to describe the code role
+        system_message_context = CODE_ROLE.format(current_os=current_os, current_shell=current_shell)
+    elif args.shell:
+        # If --shell option is provided
+        # Use SHELL_ROLE format string to describe the shell role
+        system_message_context = SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
+    else:
+        # If neither input_text nor optional_arg are provided
+        # Use DEFAULT_ROLE format string as the default message context
+        system_message_context = DEFAULT_ROLE.format(current_os=current_os, current_shell=current_shell)
+
+    # Create a system message
+    system_message = Message(role="system", content=system_message_context)
+
+    # Create a message buffer with a system message and specified buffer size
+    history_buffer = MessageBuffer(buffer_size=BUFFER_SIZE, system_message=system_message)
+
+    # Add user message to the message buffer
+    history_buffer.add_message(Message(role="user", content=user_message))
+
+    # Get buffered history of messages
+    messages = history_buffer.get_buffered_history()
+
+    # Create a chat request with Ollama model and buffered messages
+    request = ChatRequest(model=OLLAMA_MODEL, messages=messages)
+
+    # Complete the chat conversation using Ollama API
+    assistant_message = chat_completion(OLLAMA_BASE_URL, request=request)
+
+    # Print the content of the assistant's message
+    print(assistant_message.content)
+
+    # Add assistant's message to the message buffer
+    history_buffer.add_message(assistant_message)
+
+if __name__ == "__main__":
+    main()
