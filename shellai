@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# @TODO : load model depends of the request (--shell other)
-
 import os
 import sys
 import yaml
@@ -10,32 +8,32 @@ import argparse
 from pydantic import BaseModel, Field
 from typing import Union, Literal, List
 
-# Determine user's home directory
-home_dir = os.path.expanduser("~")
+# Constants
+DEFAULT_CONFIG = {
+    "OLLAMA_BASE_URL": "http://localhost:11434",
+    "OLLAMA_MODEL": "openhermes2.5-mistral",
+    "TIMEOUT_SECONDS": 60,
+    "BUFFER_SIZE": 500
+}
 
-# Path to the config directory
+# Define paths
+home_dir = os.path.expanduser("~")
 config_dir = os.path.join(home_dir, ".config", "shellai")
+config_file_path = os.path.join(config_dir, "config.yaml")
 
 # Ensure the config directory exists
 os.makedirs(config_dir, exist_ok=True)
 
-# Path to the config file
-config_file_path = os.path.join(config_dir, "config.yaml")
-
 # Load configuration from config.yaml or use default config if the file doesn't exist
 if os.path.exists(config_file_path):
     with open(config_file_path, 'r') as config_file:
-        config = yaml.safe_load(config_file)
+        config_from_file = yaml.safe_load(config_file)
 else:
-    config = {}
+    config_from_file = {}
 
-# Constants
-OLLAMA_BASE_URL = config.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = config.get("OLLAMA_MODEL", "openhermes2.5-mistral")
-TIMEOUT_SECONDS = config.get("TIMEOUT_SECONDS", 60)
-BUFFER_SIZE = config.get("BUFFER_SIZE", 500)
+config = {**DEFAULT_CONFIG, **config_from_file}
 
-# Role formats
+# Define role formats
 SHELL_ROLE = """Provide only {current_shell} commands for {current_os} without any description.
 If there is a lack of details, provide most logical solution.
 Ensure the output is a valid shell command.
@@ -55,14 +53,12 @@ DESCRIBE_SHELL_ROLE = """Provide a terse, single sentence description of the giv
 Describe each argument and option of the command.
 Provide short responses in about 80 words.
 APPLY MARKDOWN formatting when possible."""
-# Note that output for all roles containing "APPLY MARKDOWN" will be formatted as Markdown.
 
 DEFAULT_ROLE = """You are programming and system administration assistant.
 You are managing {current_os} operating system with {current_shell} shell.
 Provide short responses in about 100 words, unless you are specifically asked for more details.
 If you need to store any data, assume it will be stored in the conversation.
 APPLY MARKDOWN formatting when possible."""
-# Note that output for all roles containing "APPLY MARKDOWN" will be formatted as Markdown.
 
 # Define a Pydantic BaseModel for Message
 class Message(BaseModel):
@@ -89,7 +85,6 @@ class MessageBuffer(BaseModel):
         messages.extend(self.messages[-self.buffer_size :])
         return messages
 
-# generation function
 def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
     ollama_api_base = ollama_api_base.rstrip('/')  # Remove trailing slash from API base URL if present
 
@@ -98,7 +93,7 @@ def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
     request_data = request.model_dump()
 
     try:
-        response = httpx.post(request_url, json=request_data, timeout=TIMEOUT_SECONDS)
+        response = httpx.post(request_url, json=request_data, timeout=config["TIMEOUT_SECONDS"])
         response.raise_for_status()  # Raise HTTPError for bad status codes
         raw_message = response.json()["message"]
         message = Message(**raw_message)
@@ -146,23 +141,20 @@ def parse_arguments():
 
 def generate_config_file(file_path):
     """Generate a config.yaml file with default values."""
-    default_config = {
-        "OLLAMA_BASE_URL": "http://localhost:11434",
-        "OLLAMA_MODEL": "openhermes2.5-mistral",
-        "TIMEOUT_SECONDS": 60,
-        "BUFFER_SIZE": 500
-    }
-
+    if os.path.exists(file_path):
+        overwrite = input("A config file already exists. Do you want to overwrite it? (yes/no): ").lower()
+        if overwrite != 'yes':
+            print("Aborted. Config file not overwritten.")
+            return
     with open(file_path, 'w') as config_file:
-        yaml.dump(default_config, config_file)
+        yaml.dump(DEFAULT_CONFIG, config_file)
+    print("Default config.yaml file generated.")
 
 def display_config():
     """Display the current config used."""
     print("Current Config:")
-    print(f"OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
-    print(f"OLLAMA_MODEL: {OLLAMA_MODEL}")
-    print(f"TIMEOUT_SECONDS: {TIMEOUT_SECONDS}")
-    print(f"BUFFER_SIZE: {BUFFER_SIZE}")
+    for key, value in config.items():
+        print(f"{key}: {value}")
     print()
 
 def main():
@@ -207,7 +199,7 @@ def main():
     system_message = Message(role="system", content=system_message_context)
 
     # Create a message buffer with a system message and specified buffer size
-    history_buffer = MessageBuffer(buffer_size=BUFFER_SIZE, system_message=system_message)
+    history_buffer = MessageBuffer(buffer_size=config["BUFFER_SIZE"], system_message=system_message)
 
     # Add user message to the message buffer
     history_buffer.add_message(Message(role="user", content=user_message))
@@ -216,10 +208,10 @@ def main():
     messages = history_buffer.get_buffered_history()
 
     # Create a chat request with Ollama model and buffered messages
-    request = ChatRequest(model=OLLAMA_MODEL, messages=messages)
+    request = ChatRequest(model=config["OLLAMA_MODEL"], messages=messages)
 
     # Complete the chat conversation using Ollama API
-    assistant_message = chat_completion(OLLAMA_BASE_URL, request=request)
+    assistant_message = chat_completion(config["OLLAMA_BASE_URL"], request=request)
 
     # Print the content of the assistant's message
     print(assistant_message.content)
