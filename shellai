@@ -117,6 +117,7 @@ def parse_arguments():
     parser.add_argument('-s', '--shell', action='store_true', help='Include shell information in the message context')
     parser.add_argument('-c', '--code', dest='use_code_role', action='store_true', help='Use CODE_ROLE format')
     parser.add_argument('-d', '--describe', dest='describe_shell_role', action='store_true', help='Use DESCRIBE_SHELL_ROLE format')
+    parser.add_argument('--display-config', action='store_true', help='Display current config')
     parser.add_argument('strings', nargs='*', help='Additional strings to process')
 
     class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
@@ -142,9 +143,22 @@ def parse_arguments():
 
     return parser.parse_args()
 
+def display_config():
+    """Display the current config used."""
+    print("Current Config:")
+    print(f"OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
+    print(f"OLLAMA_MODEL: {OLLAMA_MODEL}")
+    print(f"TIMEOUT_SECONDS: {TIMEOUT_SECONDS}")
+    print(f"BUFFER_SIZE: {BUFFER_SIZE}")
+    print()
+
 def main():
     # Parse command-line arguments
     args = parse_arguments()
+
+    if args.display_config:
+        display_config()
+        sys.exit(0)  # Exit after displaying the config
 
     # Get current shell
     current_shell = os.environ.get('SHELL')
