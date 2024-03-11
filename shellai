@@ -118,6 +118,7 @@ def parse_arguments():
     parser.add_argument('-c', '--code', dest='use_code_role', action='store_true', help='Use CODE_ROLE format')
     parser.add_argument('-d', '--describe', dest='describe_shell_role', action='store_true', help='Use DESCRIBE_SHELL_ROLE format')
     parser.add_argument('--display-config', action='store_true', help='Display current config')
+    parser.add_argument('--generate-config', action='store_true', help='Generate a default config file')
     parser.add_argument('strings', nargs='*', help='Additional strings to process')
 
     class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
@@ -143,6 +144,18 @@ def parse_arguments():
 
     return parser.parse_args()
 
+def generate_config_file(file_path):
+    """Generate a config.yaml file with default values."""
+    default_config = {
+        "OLLAMA_BASE_URL": "http://localhost:11434",
+        "OLLAMA_MODEL": "openhermes2.5-mistral",
+        "TIMEOUT_SECONDS": 60,
+        "BUFFER_SIZE": 500
+    }
+
+    with open(file_path, 'w') as config_file:
+        yaml.dump(default_config, config_file)
+
 def display_config():
     """Display the current config used."""
     print("Current Config:")
@@ -155,6 +168,11 @@ def display_config():
 def main():
     # Parse command-line arguments
     args = parse_arguments()
+
+    if args.generate_config:
+        generate_config_file(config_file_path)
+        print("Default config.yaml file generated.")
+        sys.exit(0)
 
     if args.display_config:
         display_config()
