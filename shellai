@@ -85,7 +85,7 @@ class MessageBuffer(BaseModel):
         messages.extend(self.messages[-self.buffer_size :])
         return messages
 
-def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
+def chat_completion(ollama_api_base: str, request: ChatRequest, verbose: bool) -> Message:
     ollama_api_base = ollama_api_base.rstrip('/')  # Remove trailing slash from API base URL if present
 
     request_url = f"{ollama_api_base}/api/chat"
@@ -98,10 +98,16 @@ def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
         raw_message = response.json()["message"]
         message = Message(**raw_message)
     except httpx.ReadTimeout as e:
+        if verbose:
+            print(f"Timeout occurred: {e}")
         return Message(role="assistant", content="I'm sorry, I couldn't complete the chat due to a timeout.")
     except httpx.RequestError as exc:
+        if verbose:
+            print(f"Request error occurred: {exc}")
         return Message(role="assistant", content=f"An error occurred during the chat: {exc}")
     except Exception as e:
+        if verbose:
+            print(f"Unexpected error occurred: {e}")
         return Message(role="assistant", content=f"An unexpected error occurred during the chat: {e}")
 
     return message
@@ -114,6 +120,7 @@ def parse_arguments():
     parser.add_argument('-d', '--describe', dest='describe_shell_role', action='store_true', help='Describe inputs')
     parser.add_argument('--display-config', action='store_true', help='Display current config')
     parser.add_argument('--generate-config', action='store_true', help='Generate a default config file')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose mode')
     parser.add_argument('strings', nargs='*', help='Additional strings to process')
 
     class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
@@ -205,12 +212,14 @@ def main():
 
     # Get buffered history of messages
     messages = history_buffer.get_buffered_history()
+    if args.verbose:
+        print(messages)
 
     # Create a chat request with Ollama model and buffered messages
     request = ChatRequest(model=config["OLLAMA_MODEL"], messages=messages)
 
     # Complete the chat conversation using Ollama API
-    assistant_message = chat_completion(config["OLLAMA_BASE_URL"], request=request)
+    assistant_message = chat_completion(config["OLLAMA_BASE_URL"], request=request, verbose=args.verbose)
 
     # Print the content of the assistant's message
     print(assistant_message.content)
