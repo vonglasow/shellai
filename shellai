@@ -128,19 +128,23 @@ def parse_arguments():
         "\nExample usage:\n"
         "  Generate a shell command\n"
         "    $ shellai --shell \"Generate a command to find all yaml file and delete it\"\n"
+        "  Generate code \n"
+        "    $ shellai --code \"Generate a function to return fibonnacci\"\n"
+        "  Describe informations\n"
+        "    $ git diff | shellai --describe \"Generate a git commit message\"\n"
     )
 
     parser.epilog = example_usage
+
+    if len(sys.argv) <= 1:
+        parser.print_help()
+        sys.exit(1)
 
     return parser.parse_args()
 
 def main():
     # Parse command-line arguments
     args = parse_arguments()
-
-    if len(sys.argv) <= 1:
-        parser.error("You must provide at least one argument")
-        sys.exit(1)
 
     # Get current shell
     current_shell = os.environ.get('SHELL')
