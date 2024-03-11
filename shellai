@@ -111,13 +111,32 @@ def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
 
     return message
 
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description='Process user input and command-line arguments.')
+    parser.add_argument('-s', '--shell', action='store_true', help='Include shell information in the message context')
+    parser.add_argument('-c', '--code', dest='use_code_role', action='store_true', help='Use CODE_ROLE format')
+    parser.add_argument('-d', '--describe', dest='describe_shell_role', action='store_true', help='Use DESCRIBE_SHELL_ROLE format')
+    parser.add_argument('strings', nargs='*', help='Additional strings to process')
+
+    class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+        pass
+
+    parser.formatter_class = CustomFormatter
+
+    example_usage = (
+        "\nExample usage:\n"
+        "  Generate a shell command\n"
+        "    $ shellai --shell \"Generate a command to find all yaml file and delete it\"\n"
+    )
+
+    parser.epilog = example_usage
+
+    return parser.parse_args()
+
 def main():
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Process user input and command-line arguments.')
-    parser.add_argument('--shell', action='store_true', help='Include shell information in the message context')
-    parser.add_argument('-c', dest='use_code_role', action='store_true', help='Use CODE_ROLE format')
-    parser.add_argument('strings', nargs='*', help='Additional strings to process')
-    args = parser.parse_args()
+    args = parse_arguments()
 
     if len(sys.argv) <= 1:
         parser.error("You must provide at least one argument")
@@ -143,7 +162,7 @@ def main():
         system_message_context = SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
     elif args.use_code_role:
         system_message_context = CODE_ROLE.format(current_os=current_os, current_shell=current_shell)
-    elif input_text and optional_arg:
+    elif args.describe_shell_role:
         system_message_context = DESCRIBE_SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
     else:
         system_message_context = DEFAULT_ROLE.format(current_os=current_os, current_shell=current_shell)
