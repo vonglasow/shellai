@@ -34,19 +34,19 @@ positional arguments:
 
 options:
   -h, --help         show this help message and exit
-  -s, --shell        Include shell information in the message context (default: False)
-  -c, --code         Use CODE_ROLE format (default: False)
-  -d, --describe     Use DESCRIBE_SHELL_ROLE format (default: False)
+  -s, --shell        Generate shell commands (default: False)
+  -c, --code         Generate code from message (default: False)
+  -d, --describe     Describe inputs (default: False)
   --display-config   Display current config (default: False)
   --generate-config  Generate a default config file (default: False)
 
 Example usage:
   Generate a shell command
-    $ shellai --shell "Give me a command to found all yaml files and delete it"
+    $ shellai --shell "Generate a command to find all yaml file and delete it"
   Generate code
     $ shellai --code "Generate a function to return fibonnacci"
   Describe informations
-    $ docker logs quant-ux-mongo | shellai "analyze error and warning and give me advice to fix it"
+    $ git diff | shellai --describe "Generate a git commit message"
 ```
 
 ```sh

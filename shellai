@@ -109,9 +109,9 @@ def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description='Process user input and command-line arguments.')
-    parser.add_argument('-s', '--shell', action='store_true', help='Include shell information in the message context')
-    parser.add_argument('-c', '--code', dest='use_code_role', action='store_true', help='Use CODE_ROLE format')
-    parser.add_argument('-d', '--describe', dest='describe_shell_role', action='store_true', help='Use DESCRIBE_SHELL_ROLE format')
+    parser.add_argument('-s', '--shell', action='store_true', help='Generate shell commands')
+    parser.add_argument('-c', '--code', dest='use_code_role', action='store_true', help='Generate code from message')
+    parser.add_argument('-d', '--describe', dest='describe_shell_role', action='store_true', help='Describe inputs')
     parser.add_argument('--display-config', action='store_true', help='Display current config')
     parser.add_argument('--generate-config', action='store_true', help='Generate a default config file')
     parser.add_argument('strings', nargs='*', help='Additional strings to process')
@@ -163,7 +163,6 @@ def main():
 
     if args.generate_config:
         generate_config_file(config_file_path)
-        print("Default config.yaml file generated.")
         sys.exit(0)
 
     if args.display_config:
