@@ -4,7 +4,7 @@
 
 import os
 import sys
-import json
+import yaml
 import httpx
 import argparse
 from pydantic import BaseModel, Field
@@ -20,29 +20,20 @@ config_dir = os.path.join(home_dir, ".config", "shellai")
 os.makedirs(config_dir, exist_ok=True)
 
 # Path to the config file
-config_file_path = os.path.join(config_dir, "config.json")
+config_file_path = os.path.join(config_dir, "config.yaml")
 
-# Default configuration
-DEFAULT_CONFIG = {
-    "OLLAMA_BASE_URL": "http://localhost:11434",
-    #"OLLAMA_MODEL": "openhermes2.5-mistral",
-    "OLLAMA_MODEL": "mistral",
-    "TIMEOUT_SECONDS": 60,
-    "BUFFER_SIZE": 500
-}
-
-# Load configuration from config.json or use default config if the file doesn't exist
+# Load configuration from config.yaml or use default config if the file doesn't exist
 if os.path.exists(config_file_path):
     with open(config_file_path, 'r') as config_file:
-        config = json.load(config_file)
+        config = yaml.safe_load(config_file)
 else:
-    config = DEFAULT_CONFIG
+    config = {}
 
 # Constants
-OLLAMA_BASE_URL = config.get("OLLAMA_BASE_URL", DEFAULT_CONFIG["OLLAMA_BASE_URL"])
-OLLAMA_MODEL = config.get("OLLAMA_MODEL", DEFAULT_CONFIG["OLLAMA_MODEL"])
-TIMEOUT_SECONDS = config.get("TIMEOUT_SECONDS", DEFAULT_CONFIG["TIMEOUT_SECONDS"])
-BUFFER_SIZE = config.get("BUFFER_SIZE", DEFAULT_CONFIG["BUFFER_SIZE"])
+OLLAMA_BASE_URL = config.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = config.get("OLLAMA_MODEL", "openhermes2.5-mistral")
+TIMEOUT_SECONDS = config.get("TIMEOUT_SECONDS", 60)
+BUFFER_SIZE = config.get("BUFFER_SIZE", 500)
 
 # Role formats
 SHELL_ROLE = """Provide only {current_shell} commands for {current_os} without any description.
