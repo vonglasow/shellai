@@ -14,10 +14,7 @@ from typing import Union, Literal, List
 home_dir = os.path.expanduser("~")
 
 # Path to the config directory
-config_dir = os.path.join(home_dir, ".config")
-
-# Path to the config directory
-config_dir = os.path.join(config_dir, "shellai")
+config_dir = os.path.join(home_dir, ".config", "shellai")
 
 # Ensure the config directory exists
 os.makedirs(config_dir, exist_ok=True)
@@ -26,9 +23,10 @@ os.makedirs(config_dir, exist_ok=True)
 config_file_path = os.path.join(config_dir, "config.json")
 
 # Default configuration
-default_config = {
+DEFAULT_CONFIG = {
     "OLLAMA_BASE_URL": "http://localhost:11434",
-    "OLLAMA_MODEL": "openhermes2.5-mistral",
+    #"OLLAMA_MODEL": "openhermes2.5-mistral",
+    "OLLAMA_MODEL": "mistral",
     "TIMEOUT_SECONDS": 60,
     "BUFFER_SIZE": 500
 }
@@ -38,15 +36,15 @@ if os.path.exists(config_file_path):
     with open(config_file_path, 'r') as config_file:
         config = json.load(config_file)
 else:
-    config = default_config
+    config = DEFAULT_CONFIG
 
-# constant
-#OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_BASE_URL = config.get("OLLAMA_BASE_URL", default_config["OLLAMA_BASE_URL"])
-OLLAMA_MODEL = config.get("OLLAMA_MODEL", default_config["OLLAMA_MODEL"])
-TIMEOUT_SECONDS = config.get("TIMEOUT_SECONDS", default_config["TIMEOUT_SECONDS"])
-BUFFER_SIZE = config.get("BUFFER_SIZE", default_config["BUFFER_SIZE"])
+# Constants
+OLLAMA_BASE_URL = config.get("OLLAMA_BASE_URL", DEFAULT_CONFIG["OLLAMA_BASE_URL"])
+OLLAMA_MODEL = config.get("OLLAMA_MODEL", DEFAULT_CONFIG["OLLAMA_MODEL"])
+TIMEOUT_SECONDS = config.get("TIMEOUT_SECONDS", DEFAULT_CONFIG["TIMEOUT_SECONDS"])
+BUFFER_SIZE = config.get("BUFFER_SIZE", DEFAULT_CONFIG["BUFFER_SIZE"])
 
+# Role formats
 SHELL_ROLE = """Provide only {current_shell} commands for {current_os} without any description.
 If there is a lack of details, provide most logical solution.
 Ensure the output is a valid shell command.
@@ -77,70 +75,49 @@ APPLY MARKDOWN formatting when possible."""
 
 # Define a Pydantic BaseModel for Message
 class Message(BaseModel):
-    # Define the fields for a message
     role: Union[Literal["system"], Literal["user"], Literal["assistant"]] # Role of the message sender
     content: str  # Content of the message
 
 # Define a Pydantic BaseModel for ChatRequest
 class ChatRequest(BaseModel):
-    # Define fields with default values removed and aliases for serialization/deserialization
     model: str = Field(..., alias="model")  # The type of chat model to use
     messages: List[Message] = Field(default_factory=list)  # List of messages with default factory set to empty list
     stream: bool = Field(default=False, alias="stream")  # Boolean flag indicating if streaming is enabled
 
 # Define a Pydantic BaseModel for MessageBuffer
 class MessageBuffer(BaseModel):
-    # Define fields with default values removed and aliases for serialization/deserialization
     system_message: Message = Field(..., alias="system_message") # The system message
     messages: List[Message] = Field(default_factory=list) # List of messages with default factory set to empty list
     buffer_size: int = Field(..., alias="buffer_size") # Size of the message buffer
 
-    # Method to add a message to the buffer
     def add_message(self, message: Message):
         self.messages.append(message)
 
-    # Method to get the buffered history of messages
     def get_buffered_history(self) -> List[Message]:
-        # Initialize a list with the system message as the first element
         messages = [self.system_message]
-        # Extend the list with the most recent messages from the buffer up to the buffer size
         messages.extend(self.messages[-self.buffer_size :])
-        # Return the buffered history of messages
         return messages
 
 # generation function
 def chat_completion(ollama_api_base: str, request: ChatRequest) -> Message:
-    # Remove trailing slash from API base URL if present
-    ollama_api_base.rstrip() if ollama_api_base[-1] == "/" else ...
+    ollama_api_base = ollama_api_base.rstrip('/')  # Remove trailing slash from API base URL if present
 
-    # Construct the URL for the chat API endpoint
-    request_url = ollama_api_base + "/api/chat"
+    request_url = f"{ollama_api_base}/api/chat"
 
-    # Get the data to be sent in the request by serializing the ChatRequest object
     request_data = request.model_dump()
 
-    # Make an HTTP POST request to the chat API endpoint, sending JSON data
     try:
         response = httpx.post(request_url, json=request_data, timeout=TIMEOUT_SECONDS)
-        # Extract the raw message from the response JSON
+        response.raise_for_status()  # Raise HTTPError for bad status codes
         raw_message = response.json()["message"]
-        # Create a Message object from the raw message data
         message = Message(**raw_message)
     except httpx.ReadTimeout as e:
-        # Display a part of the response if request timeout occurs
-        print("HTTP request timed out. Unable to complete the chat at the moment. Try to be more precise or use another model")
-        # Here you can decide whether to return a default message or raise the exception
         return Message(role="assistant", content="I'm sorry, I couldn't complete the chat due to a timeout.")
     except httpx.RequestError as exc:
-        print(f"An error occurred: {exc}")
-        # Here you can decide whether to return a default message or raise the exception
-        return Message(role="assistant", content="An error occurred during the chat httpx request error.")
+        return Message(role="assistant", content=f"An error occurred during the chat: {exc}")
     except Exception as e:
-        print(f"An error occurred: {e}")
-        # Here you can decide whether to return a default message or raise the exception
-        return Message(role="assistant", content="An error occurred during the chat.")
+        return Message(role="assistant", content=f"An unexpected error occurred during the chat: {e}")
 
-    # Return the message
     return message
 
 def main():
@@ -161,7 +138,7 @@ def main():
     # Get current operating system
     current_os = sys.platform
 
-    # Check if there is input available from stdin Read input from stdin and remove leading/trailing whitespace
+    # Check if there is input available from stdin
     input_text = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
 
     # Check if there are additional strings provided
@@ -170,21 +147,14 @@ def main():
     # Combine user input with command line argument
     user_message = input_text + " " + optional_arg
 
-    if input_text and optional_arg:
-        # If both input_text and optional_arg are provided
-        # Use DESCRIBE_SHELL_ROLE format string to describe the shell role
-        system_message_context = DESCRIBE_SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
-    elif args.use_code_role:
-        # If only optional_arg is provided
-        # Use CODE_ROLE format string to describe the code role
-        system_message_context = CODE_ROLE.format(current_os=current_os, current_shell=current_shell)
-    elif args.shell:
-        # If --shell option is provided
-        # Use SHELL_ROLE format string to describe the shell role
+    # Choose the appropriate system message context based on command-line arguments
+    if args.shell:
         system_message_context = SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
+    elif args.use_code_role:
+        system_message_context = CODE_ROLE.format(current_os=current_os, current_shell=current_shell)
+    elif input_text and optional_arg:
+        system_message_context = DESCRIBE_SHELL_ROLE.format(current_os=current_os, current_shell=current_shell)
     else:
-        # If neither input_text nor optional_arg are provided
-        # Use DEFAULT_ROLE format string as the default message context
         system_message_context = DEFAULT_ROLE.format(current_os=current_os, current_shell=current_shell)
 
     # Create a system message
