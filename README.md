@@ -1,5 +1,7 @@
 # ShellAI
 
+If this script interests you, take a look at my new project: https://github.com/vonglasow/gaia
+
 ## Requirements
 
 - https://ollama.com
